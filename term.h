@@ -22,10 +22,10 @@ typedef struct Cursor {
     int col;
 } Cursor;
 
-int mut_write_screenbuffer(ScreenBuffer* mut_self, char* data, unsigned int bytes);
-void mut_clear_screenbuffer(ScreenBuffer* mut_self);
-void mut_resize_screenbuffer(ScreenBuffer* mut_self, unsigned int new_size);
-void mut_free_screenbuffer(ScreenBuffer* mut_self);
+void ScreenBuffer_write(ScreenBuffer* self, const char* data, const unsigned int bytes);
+void ScreenBuffer_clear(ScreenBuffer* self);
+void ScreenBuffer_resize(ScreenBuffer* self, unsigned int new_size);
+void ScreenBuffer_free(ScreenBuffer* self);
 
 typedef struct TermState {
     Screen screen;
@@ -33,7 +33,7 @@ typedef struct TermState {
     Cursor cursor;
 } TermState;
 
-int mut_get_window_size(int* mut_rows, int* mut_cols);
+Result get_window_size(int* rows, int* cols);
 
 void enable_raw_mode();
 
@@ -43,6 +43,6 @@ void restore_term();
 
 void setup_term();
 
-int mut_get_cursor_position(Cursor* mut_cursor);
+Result get_cursor_position(Cursor* cursor);
 
 #endif

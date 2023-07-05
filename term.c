@@ -11,53 +11,51 @@
 
 struct termios default_attrs;
 
-void mut_resize_screenbuffer(ScreenBuffer *mut_self, unsigned int new_size) {
+void ScreenBuffer_resize(ScreenBuffer *self, unsigned int new_size) {
     // extra room for escape sequences
     new_size += ESC_SEQ_SPACE;
 
-    mut_self->b = realloc(mut_self->b, new_size * sizeof(char));
-    mut_self->size = new_size;
+    self->b = realloc(self->b, new_size * sizeof(char));
+    self->size = new_size;
 }
 
-int mut_write_screenbuffer(ScreenBuffer *mut_self, char *data,
-                           unsigned int bytes_written) {
-    if (bytes_written + mut_self->current_index > mut_self->size) {
+void ScreenBuffer_write(ScreenBuffer *self, const char *data,
+                           const unsigned int bytes_written) {
+    if (bytes_written + self->current_index > self->size) {
         // resize the screenbuffer if the size is out of bounds
-        mut_resize_screenbuffer(
-            mut_self, mut_self->size + bytes_written + mut_self->current_index);
+        ScreenBuffer_resize(
+            self, self->size + bytes_written + self->current_index);
     }
 
     for (unsigned int i = 0; i < bytes_written; i++) {
-        mut_self->b[i + mut_self->current_index] = data[i];
+        self->b[i + self->current_index] = data[i];
     }
-    mut_self->current_index += bytes_written;
-
-    return 0;
+    self->current_index += bytes_written;
 }
 
-void mut_clear_screenbuffer(ScreenBuffer *mut_self) {
-    for (unsigned int i = 0; i < mut_self->size; i++) {
-        mut_self->b[i] = '\0';
+void ScreenBuffer_clear(ScreenBuffer *self) {
+    for (unsigned int i = 0; i < self->size; i++) {
+        self->b[i] = '\0';
     }
 
-    mut_self->current_index = 0;
+    self->current_index = 0;
 }
 
-void mut_free_screenbuffer(ScreenBuffer *mut_self) {
-    if (!mut_self->b || mut_self->size == 0) return;
+void ScreenBuffer_free(ScreenBuffer *self) {
+    if (!self->b || self->size == 0) return;
 
-    free(mut_self->b);
+    free(self->b);
 }
 
-int mut_get_window_size(int *mut_rows, int *mut_cols) {
+Result get_window_size(int *rows, int *cols) {
     struct winsize ws;
 
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
-        return -1;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == Err || ws.ws_col == 0) {
+        return Err;
     } else {
-        *mut_cols = ws.ws_col;
-        *mut_rows = ws.ws_row;
-        return 0;
+        *cols = ws.ws_col;
+        *rows = ws.ws_row;
+        return Ok;
     }
 }
 
@@ -65,15 +63,15 @@ void enable_raw_mode() {
     // load the terminal config into term_attrs
     struct termios term_attrs = default_attrs;
 
-    int input_features_toggle = IXON |  // disable software control flow
+    const int input_features_toggle = IXON |  // disable software control flow
                                 ICRNL   // prevent carriage return (ctrl+m) from
                                         // being translated to newline on input
         ;
 
-    int output_features_toggle = OPOST  // disable all output processing
+    const int output_features_toggle = OPOST  // disable all output processing
         ;
 
-    int local_features_toggle =
+    const int local_features_toggle =
         ECHO |    // disable printing of the keys when they are pressed
         ICANON |  // read byte by byte instead of lines
         ISIG |    // disable INTR, QUIT, SUSP, or DSUSP signals
@@ -99,27 +97,27 @@ void enable_raw_mode() {
     term_attrs.c_cc[VTIME] = 1;
 
     // update the terminal config
-    int result = tcsetattr(STDIN_FILENO, TCSAFLUSH, &term_attrs);
+    const Result result = tcsetattr(STDIN_FILENO, TCSAFLUSH, &term_attrs);
 
-    if (result == -1) {
+    if (result == Err) {
         panic("tcsetattr");
     }
 }
 
 void init_default_attrs() {
-    int result = tcgetattr(STDIN_FILENO, &default_attrs);
+    const Result result = tcgetattr(STDIN_FILENO, &default_attrs);
 
-    if (result == -1) {
+    if (result == Err) {
         panic("tcgetattr");
     }
 }
 
 void restore_term() {
-    int result = tcsetattr(STDIN_FILENO, TCSANOW, &default_attrs);
+    const Result result = tcsetattr(STDIN_FILENO, TCSANOW, &default_attrs);
 
     system("tput rmcup");
 
-    if (result == -1) {
+    if (result == Err) {
         panic("tcsetattr");
     }
 }
@@ -134,7 +132,7 @@ void setup_term() {
     atexit(restore_term);
 }
 
-int mut_get_cursor_position(Cursor *mut_cursor) {
+Result get_cursor_position(Cursor *cursor) {
     int reading_cols = 0;
     int i_col = 0;
     int i_row = 0;
@@ -143,7 +141,7 @@ int mut_get_cursor_position(Cursor *mut_cursor) {
 
     char c;
 
-    if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
+    if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return Err;
 
     for (unsigned int i = 0; i < 32; i++) {
         if (read(STDIN_FILENO, &c, 1) != 1) break;
@@ -171,8 +169,8 @@ int mut_get_cursor_position(Cursor *mut_cursor) {
     col[i_col] = '\0';
     row[i_row] = '\0';
 
-    mut_cursor->row = atoi(row);
-    mut_cursor->col = atoi(col);
+    cursor->row = atoi(row);
+    cursor->col = atoi(col);
 
     return 0;
 }

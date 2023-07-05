@@ -9,30 +9,30 @@
 
 TermState g_term_state;
 
-char buf[32];
+char cursor_movement_buf[32];
 
 void draw() {
-    mut_clear_screenbuffer(&g_term_state.screen_buffer);
-    mut_write_screenbuffer(&g_term_state.screen_buffer, ESC "[H", 3);
+    ScreenBuffer_clear(&g_term_state.screen_buffer);
+    ScreenBuffer_write(&g_term_state.screen_buffer, ESC "[H", 3);
 
     for (int i = 0; i < g_term_state.screen.rows; i++) {
         if (i != g_term_state.screen.rows - 1) {
-            mut_write_screenbuffer(&g_term_state.screen_buffer,
+            ScreenBuffer_write(&g_term_state.screen_buffer,
                                    "~\r\n" ESC "[K", 6);
 
             continue;
         }
 
-        mut_write_screenbuffer(&g_term_state.screen_buffer, "~" ESC "[K", 4);
+        ScreenBuffer_write(&g_term_state.screen_buffer, "~" ESC "[K", 4);
     }
 
-    snprintf(buf, sizeof(buf), ESC "[%d;%dH", g_term_state.cursor.row + 1,
+    snprintf(cursor_movement_buf, sizeof(cursor_movement_buf), ESC "[%d;%dH", g_term_state.cursor.row + 1,
              g_term_state.cursor.col + 1);
 
-    mut_write_screenbuffer(&g_term_state.screen_buffer, buf, strlen(buf));
+    ScreenBuffer_write(&g_term_state.screen_buffer, cursor_movement_buf, strlen(cursor_movement_buf));
 }
 
-void process_key(char k) {
+void process_key(const char k) {
     switch (k) {
         case TO_CTRL('q'):
             exit(0);
@@ -81,14 +81,14 @@ void main_loop() {
 
     write(STDIN_FILENO, SCREEN_REFRESH, strlen(SCREEN_REFRESH));
 
-    int result = mut_get_window_size(&g_term_state.screen.rows,
+    const Result result = get_window_size(&g_term_state.screen.rows,
                                      &g_term_state.screen.columns);
 
-    if (result == -1) {
-        panic("mut_get_window_size");
+    if (result == Err) {
+        panic("get_window_size");
     }
 
-    mut_resize_screenbuffer(&g_term_state.screen_buffer, g_term_state.screen.rows * g_term_state.screen.columns);
+    ScreenBuffer_resize(&g_term_state.screen_buffer, g_term_state.screen.rows * g_term_state.screen.columns);
 
     for (;;) {
         draw();
@@ -102,7 +102,7 @@ void main_loop() {
         process_key(c);
     };
 
-    mut_free_screenbuffer(&g_term_state.screen_buffer);
+    ScreenBuffer_free(&g_term_state.screen_buffer);
 }
 
 int main() {
