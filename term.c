@@ -11,34 +11,31 @@
 
 struct termios default_attrs;
 
-void ScreenBuffer_resize(ScreenBuffer *self, unsigned int new_size) {
-    // extra room for escape sequences
-    new_size += ESC_SEQ_SPACE;
+void ScreenBuffer_reset(ScreenBuffer *self) { self->current_index = 0; }
 
-    self->b = realloc(self->b, new_size * sizeof(char));
+void ScreenBuffer_resize(ScreenBuffer *self, size_t new_size) {
+    self->b = realloc(self->b, new_size);
     self->size = new_size;
 }
 
 void ScreenBuffer_write(ScreenBuffer *self, const char *data,
-                           const unsigned int bytes_written) {
+                        const size_t bytes_written) {
     if (bytes_written + self->current_index > self->size) {
         // resize the screenbuffer if the size is out of bounds
-        ScreenBuffer_resize(
-            self, self->size + bytes_written + self->current_index);
+        ScreenBuffer_resize(self,
+                            self->size + bytes_written + self->current_index);
     }
 
-    for (unsigned int i = 0; i < bytes_written; i++) {
+    for (size_t i = 0; i < bytes_written; i++) {
         self->b[i + self->current_index] = data[i];
     }
     self->current_index += bytes_written;
 }
 
 void ScreenBuffer_clear(ScreenBuffer *self) {
-    for (unsigned int i = 0; i < self->size; i++) {
+    for (size_t i = 0; i < self->size; i++) {
         self->b[i] = '\0';
     }
-
-    self->current_index = 0;
 }
 
 void ScreenBuffer_free(ScreenBuffer *self) {
@@ -47,25 +44,26 @@ void ScreenBuffer_free(ScreenBuffer *self) {
     free(self->b);
 }
 
-Result get_window_size(int *rows, int *cols) {
+Result get_window_size(size_t *rows, size_t *cols) {
     struct winsize ws;
 
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == Err || ws.ws_col == 0) {
-        return Err;
-    } else {
-        *cols = ws.ws_col;
-        *rows = ws.ws_row;
-        return Ok;
-    }
+    ertn(ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws));
+
+    if (ws.ws_col == 0) return Err;
+
+    *cols = ws.ws_col;
+    *rows = ws.ws_row;
+    return Ok;
 }
 
 void enable_raw_mode() {
     // load the terminal config into term_attrs
     struct termios term_attrs = default_attrs;
 
-    const int input_features_toggle = IXON |  // disable software control flow
-                                ICRNL   // prevent carriage return (ctrl+m) from
-                                        // being translated to newline on input
+    const int input_features_toggle =
+        IXON |  // disable software control flow
+        ICRNL   // prevent carriage return (ctrl+m) from
+                // being translated to newline on input
         ;
 
     const int output_features_toggle = OPOST  // disable all output processing
@@ -143,7 +141,7 @@ Result get_cursor_position(Cursor *cursor) {
 
     if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return Err;
 
-    for (unsigned int i = 0; i < 32; i++) {
+    for (size_t i = 0; i < 32; i++) {
         if (read(STDIN_FILENO, &c, 1) != 1) break;
         if (c == 'R') break;
 

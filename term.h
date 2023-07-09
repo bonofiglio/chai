@@ -1,39 +1,46 @@
+#include "file.h"
+#include "utils.h"
+
 #ifndef _TERM_H
 #define _TERM_H
-
-#include "utils.h"
 
 #define ESC_SEQ_SPACE 100
 #define SCREEN_REFRESH ESC "[2J" ESC "[H"
 
 typedef struct Screen {
-    int rows;
-    int columns;
+    size_t rows;
+    size_t columns;
+    size_t padding_x;
+    size_t padding_y;
 } Screen;
 
 typedef struct ScreenBuffer {
     char* b;
-    unsigned int size;
-    unsigned int current_index;
+    size_t size;
+    size_t current_index;
 } ScreenBuffer;
 
 typedef struct Cursor {
-    int row;
-    int col;
+    size_t row;
+    size_t col;
 } Cursor;
 
-void ScreenBuffer_write(ScreenBuffer* self, const char* data, const unsigned int bytes);
+void ScreenBuffer_reset(ScreenBuffer* self);
+void ScreenBuffer_write(ScreenBuffer* self, const char* data,
+                        const size_t bytes);
 void ScreenBuffer_clear(ScreenBuffer* self);
-void ScreenBuffer_resize(ScreenBuffer* self, unsigned int new_size);
+void ScreenBuffer_resize(ScreenBuffer* self, size_t new_size);
 void ScreenBuffer_free(ScreenBuffer* self);
 
 typedef struct TermState {
-    Screen screen;
+    Screen w_screen;
+    Screen t_screen;
     ScreenBuffer screen_buffer;
     Cursor cursor;
+    File* current_file;
 } TermState;
 
-Result get_window_size(int* rows, int* cols);
+Result get_window_size(size_t* rows, size_t* cols);
 
 void enable_raw_mode();
 
