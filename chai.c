@@ -1,4 +1,5 @@
 #include <limits.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,183 +7,176 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+#include "canvas.h"
 #include "colors.h"
+#include "screen.h"
 #include "term.h"
 #include "utils.h"
+#include "xchar.h"
 
 TermState g_term_state;
 
-char cursor_movement_buf[10];
+void draw_text_file(const size_t offset, Canvas* canvas) {
+    if (!g_term_state.current_file) return;
 
-int draw_file_text(size_t* fr, size_t* sr) {
-    char* line_num = get_line_number_str(*sr, g_term_state.w_screen.rows);
-    size_t line_num_width = strlen(line_num); 
+    const size_t columns = canvas->width - offset;
 
+    for (size_t fr = 0, cr = 0; fr < canvas->height; fr++) {
+        const TextRow* current_row = &g_term_state.current_file->rows[fr];
 
-    ScreenBuffer_write(&g_term_state.screen_buffer, BLU, 5);
-    ScreenBuffer_write(&g_term_state.screen_buffer, line_num, line_num_width);
-    ScreenBuffer_write(&g_term_state.screen_buffer, RESET, 4);
-    free(line_num);
-
-    const size_t columns = g_term_state.w_screen.columns - line_num_width;
-
-    const Row* current_row = &g_term_state.current_file->rows[*fr];
-
-    if (!current_row->size) {
-        ScreenBuffer_write(&g_term_state.screen_buffer, "\r\n", 2);
-        return 0;
-    }
-
-    const int lines_to_write = CEIL(current_row->size, columns);
-
-    for (int i = 0; i < lines_to_write; i++, (*sr)++) {
-        size_t offset = columns * i;
-
-        size_t size = MIN(current_row->size - offset, columns);
-
-        ScreenBuffer_write(&g_term_state.screen_buffer,
-                           &current_row->chars[columns * i], size);
-
-        // if on the last line, don't write a line break to avoid overflowing
-        // the screen
-        if ((*sr) == g_term_state.w_screen.rows - 1) {
-            return 1;
-        }
-
-        ScreenBuffer_write(&g_term_state.screen_buffer, "\r\n", 2);
-    }
-
-    (*sr)--;
-
-    return 0;
-}
-
-void draw() {
-    ScreenBuffer_reset(&g_term_state.screen_buffer);
-    ScreenBuffer_write(&g_term_state.screen_buffer, ESC "[2J", 4);
-    ScreenBuffer_write(&g_term_state.screen_buffer, ESC "[H", 3);
-
-    for (size_t sr = 0, fr = 0; sr < g_term_state.w_screen.rows; sr++, fr++) {
-        if (g_term_state.current_file &&
-            fr < g_term_state.current_file->num_rows) {
-            if (draw_file_text(&fr, &sr) == 1) break;
-
+        if (!current_row->size) {
+            cr++;
             continue;
         }
 
-        if (sr != g_term_state.w_screen.rows - 1) {
-            ScreenBuffer_write(&g_term_state.screen_buffer, BLU "~\r\n" RESET,
-                               12);
+        const size_t lines_to_write = CEIL(current_row->size, columns);
 
-            continue;
+        for (size_t i = 0; i < lines_to_write && cr < canvas->height;
+             i++, cr++) {
+            size_t r_offset = columns * i;
+
+            size_t size = MIN(current_row->size - r_offset, columns);
+
+            for (size_t j = 0; j < size; j++) {
+                char c = current_row->chars[r_offset + j];
+
+                Canvas_set_px(
+                    canvas, offset + j, cr,
+                    XChar_from_char(c));
+            }
         }
+    }
+}
 
-        if (g_term_state.current_file) {
-            ScreenBuffer_write(&g_term_state.screen_buffer,
-                               g_term_state.current_file->path,
-                               strlen(g_term_state.current_file->path));
+size_t draw_line_num_rows(Canvas* canvas, const size_t rows) {
+    const size_t max_row_width = size_t_width(rows);
+    char line_num[max_row_width + 9];
+
+    for (size_t i = 0; i < rows; i++) {
+        get_line_number_str(i, max_row_width, line_num);
+        size_t line_num_width = strlen(line_num);
+
+        for (size_t j = 0; j < line_num_width; j++) {
+            Canvas_set_px(canvas, j, i, XChar_with_color(line_num[j], BLU));
         }
     }
 
-    int len = snprintf(cursor_movement_buf, sizeof(cursor_movement_buf),
-                       ESC "[%zu;%zuH", g_term_state.cursor.row + 1,
-                       g_term_state.cursor.col + 1);
-
-    ScreenBuffer_write(&g_term_state.screen_buffer, cursor_movement_buf, len);
+    return max_row_width + 1;
 }
 
-void process_key(const char k) {
+void process_key(const char k, const size_t rows, const size_t cols,
+                 Cursor* cursor) {
     switch (k) {
         case TO_CTRL('q'):
             exit(0);
             break;
         case 'h': {
-            size_t* col = &g_term_state.cursor.col;
-            size_t* row = &g_term_state.cursor.row;
+            size_t* col = &cursor->col;
+            size_t* row = &cursor->row;
 
-            if (*col > 0) {
+            if (*col > cursor->min_col) {
                 (*col)--;
-            } else if (*row > 0) {
+            } else if (*row > cursor->min_row) {
                 (*row)--;
-                *col = g_term_state.w_screen.columns - 1;
+                *col = cols - 1;
             }
             break;
         }
         case 'l': {
-            size_t* col = &g_term_state.cursor.col;
-            size_t* row = &g_term_state.cursor.row;
+            size_t* col = &cursor->col;
+            size_t* row = &cursor->row;
 
-            if (*col < g_term_state.w_screen.columns - 1) {
+            if (*col < cols - 1) {
                 (*col)++;
-            } else if (*row < g_term_state.w_screen.rows - 1) {
+            } else if (*row < rows - 1) {
                 (*row)++;
-                *col = 0;
+                *col = cursor->min_col;
             }
             break;
         }
         case 'j': {
-            if (g_term_state.cursor.row >= g_term_state.w_screen.rows - 1)
-                break;
+            if (cursor->row >= rows - 1) break;
 
-            g_term_state.cursor.row++;
+            cursor->row++;
             break;
         }
         case 'k': {
-            if (g_term_state.cursor.row <= 0) break;
+            if (cursor->row <= 0) break;
 
-            g_term_state.cursor.row--;
+            cursor->row--;
             break;
         }
     }
 }
 
 void main_loop() {
-    char c;
+    size_t rows = 0;
+    size_t cols = 0;
 
-    write(STDIN_FILENO, SCREEN_REFRESH, strlen(SCREEN_REFRESH));
-
-    const Result result = get_window_size(&g_term_state.w_screen.rows,
-                                          &g_term_state.w_screen.columns);
-
+    const Result result = get_window_size(&rows, &cols);
     if (result == Err) {
         panic("get_window_size");
     }
 
+    Canvas canvas = Canvas_new(cols, rows);
+    Cursor cursor = Cursor_new(0, 0);
+
     // pre-allocate 128kb of vram
-    ScreenBuffer_resize(&g_term_state.screen_buffer, 128000);
+    ScreenBuffer scr_buf = ScreenBuffer_new(128000);
 
     for (;;) {
-        draw();
+        ScreenBuffer_reset(&scr_buf);
+        ScreenBuffer_write(&scr_buf, ESC "[2J", 4);
+        ScreenBuffer_write(&scr_buf, ESC "[H", 3);
 
-        write(STDIN_FILENO, g_term_state.screen_buffer.b,
-              g_term_state.screen_buffer.current_index);
+        Canvas_clear(&canvas);
 
-        c = '\0';
+        const size_t line_num_width = draw_line_num_rows(&canvas, rows);
+        cursor.min_col = line_num_width + 1;
+
+        if (cursor.col < cursor.min_col) cursor.col = cursor.min_col;
+
+        draw_text_file(line_num_width + 1, &canvas);
+
+        CharSizeTuple c_str = Canvas_to_str(&canvas);
+        ScreenBuffer_write(&scr_buf, c_str.chars, c_str.size);
+
+        const char* cursor_str = Cursor_to_str(&cursor);
+        ScreenBuffer_write(&scr_buf, cursor_str, strlen(cursor_str));
+
+        write(STDIN_FILENO, scr_buf.b, scr_buf.current_index);
+
+        char c = '\0';
         // block thread until an input is received
         while (!read(STDIN_FILENO, &c, 1))
             ;
 
-        process_key(c);
+        process_key(c, rows, cols, &cursor);
     };
+
+    ScreenBuffer_free(&scr_buf);
+    Canvas_free(&canvas);
 }
 
-int main() {
+int main(const int argc, char *argv[]) {
     File current_file;
 
-    current_file.path = "/Users/danielbonofiglio/test.txt";
+    if (argc == 2) {
+        current_file.path = argv[2];
 
-    Result res = File_open(&current_file);
+        Result res = File_open(&current_file);
+        if (res == Err) panic("File_open");
 
-    if (res == Err) panic("File_open");
-
-    g_term_state.current_file = &current_file;
+        g_term_state.current_file = &current_file;
+    }
 
     setup_term();
 
     main_loop();
 
-    ScreenBuffer_free(&g_term_state.screen_buffer);
-    File_free(&current_file);
+    if (argc == 2) {
+        File_free(&current_file);
+    }
 
     return 0;
 }

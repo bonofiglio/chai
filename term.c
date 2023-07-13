@@ -11,37 +11,17 @@
 
 struct termios default_attrs;
 
-void ScreenBuffer_reset(ScreenBuffer *self) { self->current_index = 0; }
+Cursor Cursor_new(const size_t min_col, const size_t min_row) {
+    Cursor c = {.col = 0, .row = 0, .min_col = min_col, .min_row = min_row, ._str_buf = {'\0'}};
 
-void ScreenBuffer_resize(ScreenBuffer *self, size_t new_size) {
-    self->b = realloc(self->b, new_size);
-    self->size = new_size;
+    return c;
 }
 
-void ScreenBuffer_write(ScreenBuffer *self, const char *data,
-                        const size_t bytes_written) {
-    if (bytes_written + self->current_index > self->size) {
-        // resize the screenbuffer if the size is out of bounds
-        ScreenBuffer_resize(self,
-                            self->size + bytes_written + self->current_index);
-    }
+char *Cursor_to_str(Cursor *self) {
+    snprintf(self->_str_buf, sizeof(self->_str_buf), ESC "[%zu;%zuH",
+             self->row + 1, self->col + 1);
 
-    for (size_t i = 0; i < bytes_written; i++) {
-        self->b[i + self->current_index] = data[i];
-    }
-    self->current_index += bytes_written;
-}
-
-void ScreenBuffer_clear(ScreenBuffer *self) {
-    for (size_t i = 0; i < self->size; i++) {
-        self->b[i] = '\0';
-    }
-}
-
-void ScreenBuffer_free(ScreenBuffer *self) {
-    if (!self->b || self->size == 0) return;
-
-    free(self->b);
+    return self->_str_buf;
 }
 
 Result get_window_size(size_t *rows, size_t *cols) {

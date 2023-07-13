@@ -1,17 +1,18 @@
+#ifndef _FS_H
+#define _FS_H
+
 #include "utils.h"
+#include "screen.h"
 
-#ifndef _FILE_H
-#define _FILE_H
-
-typedef struct Row {
+typedef struct TextRow {
     size_t size;
     char* chars;
-} Row;
+} TextRow;
 
 typedef struct File {
     char* path;
     size_t num_rows;
-    Row* rows;
+    TextRow* rows;
 } File;
 
 Result File_open(File* self);

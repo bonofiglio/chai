@@ -41,8 +41,7 @@ void generate_empty_string(char* out, size_t len) {
     }
 }
 
-char* get_line_number_str(const size_t row, const size_t max_row) {
-    const size_t max_row_len = size_t_width(max_row);
+void get_line_number_str(const size_t row, const size_t max_row_len, char* out) {
     const size_t row_len = size_t_width(row);
     const size_t left_pad_len = MAX(max_row_len - row_len, 0);
 
@@ -52,8 +51,5 @@ char* get_line_number_str(const size_t row, const size_t max_row) {
 
     if (left_pad_len == 0) left_pad[0] = '\0';
 
-    char* line_num =
-        format(sizeof(left_pad) + row_len + 3, " %s%zu ", left_pad, row);
-
-    return line_num;
+    snprintf(out, sizeof(left_pad) + row_len + 3, " %s%zu ", left_pad, row);
 }

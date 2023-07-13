@@ -1,4 +1,5 @@
-#include "file.h"
+#include "fs.h"
+#include "screen.h"
 #include "utils.h"
 
 #ifndef _TERM_H
@@ -6,36 +7,20 @@
 
 #define ESC_SEQ_SPACE 100
 #define SCREEN_REFRESH ESC "[2J" ESC "[H"
-
-typedef struct Screen {
-    size_t rows;
-    size_t columns;
-    size_t padding_x;
-    size_t padding_y;
-} Screen;
-
-typedef struct ScreenBuffer {
-    char* b;
-    size_t size;
-    size_t current_index;
-} ScreenBuffer;
+#define Option(type) int | void
 
 typedef struct Cursor {
     size_t row;
     size_t col;
+    size_t min_row;
+    size_t min_col;
+    char _str_buf[10];
 } Cursor;
 
-void ScreenBuffer_reset(ScreenBuffer* self);
-void ScreenBuffer_write(ScreenBuffer* self, const char* data,
-                        const size_t bytes);
-void ScreenBuffer_clear(ScreenBuffer* self);
-void ScreenBuffer_resize(ScreenBuffer* self, size_t new_size);
-void ScreenBuffer_free(ScreenBuffer* self);
+Cursor Cursor_new(const size_t min_col, const size_t min_row);
+char* Cursor_to_str(Cursor* self);
 
 typedef struct TermState {
-    Screen w_screen;
-    Screen t_screen;
-    ScreenBuffer screen_buffer;
     Cursor cursor;
     File* current_file;
 } TermState;

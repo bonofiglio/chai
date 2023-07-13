@@ -2,6 +2,8 @@
 #define _UTILS_H
 
 #include <stdlib.h>
+#include <stdio.h>
+
 #define ESC "\x1b"
 #define TO_CTRL(key) ((key)&0x1f)
 #define CEIL(A, B) (A + (B - 1)) / B
@@ -32,11 +34,23 @@
         return Err;   \
     }
 
+#define pair(type, first_val, second_val) \
+    ({                                    \
+        type pair;                        \
+        pair.first = first_val;           \
+        pair.second = second_val;         \
+        pair;                             \
+    })
+
 typedef enum Result { Ok = 0, Err = -1 } Result;
+typedef struct SizeTPair {
+    size_t first;
+    size_t second;
+} SizeTPair;
 
 size_t size_t_width(const size_t num);
 void panic(const char* fn_name);
 void generate_empty_string(char* out, size_t len);
-char* get_line_number_str(const size_t row, const size_t max_row);
+void get_line_number_str(const size_t row, const size_t max_row, char* out);
 
 #endif
