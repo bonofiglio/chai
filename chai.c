@@ -162,7 +162,7 @@ int main(const int argc, char *argv[]) {
     File current_file;
 
     if (argc == 2) {
-        current_file.path = argv[2];
+        printf("argv: %s", argv[1]);
 
         Result res = File_open(&current_file);
         if (res == Err) panic("File_open");
