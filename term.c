@@ -1,27 +1,73 @@
 #include "term.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stddef.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
-#include "utils.h"
-
 struct termios default_attrs;
 
-Cursor Cursor_new(const size_t min_col, const size_t min_row) {
-    Cursor c = {.col = 0, .row = 0, .min_col = min_col, .min_row = min_row, ._str_buf = {'\0'}};
+TermState TermState_new(Canvas canvas, Cursor cursor) {
+    TermState ts = {.canvas = canvas,
+                    .cursor = cursor,
+                    .scroll_pos = 0,
+                    .current_file = NULL};
 
-    return c;
+    return ts;
 }
 
-char *Cursor_to_str(Cursor *self) {
-    snprintf(self->_str_buf, sizeof(self->_str_buf), ESC "[%zu;%zuH",
-             self->row + 1, self->col + 1);
+void TermState_scoll(TermState *self, enum Directions dir,
+                     const size_t max_height) {
+    switch (dir) {
+        case Up:
+            if (self->scroll_pos > 0) {
+                self->scroll_pos--;
+            }
+            break;
+        case Down:
+            if (max_height + self->scroll_pos < self->current_file->num_rows) {
+                self->scroll_pos++;
+            }
+            break;
+        default:
+            break;
+    }
+}
 
-    return self->_str_buf;
+size_t TermState_get_text_row_height(TermState *self, const size_t idx,
+                                     const size_t padding) {
+    const TextRow *current_row = &self->current_file->rows[idx];
+
+    if (current_row->size == 0) return 1;
+
+    const size_t row_lines =
+        CEIL(current_row->size, self->canvas.width - padding);
+
+    return row_lines;
+}
+
+size_t TermState_get_text_row_at(TermState *self, const size_t y,
+                                 const size_t padding) {
+    size_t ri = 0;
+
+    for (size_t i = 0; i <= y && ri < self->current_file->num_rows; ri++) {
+        const TextRow *current_row = &self->current_file->rows[ri];
+
+        const size_t row_height =
+            TermState_get_text_row_height(self, ri, padding);
+
+        i += row_height;
+    }
+
+    return ri;
+}
+
+void TermState_free(TermState *self) {
+    Canvas_free(&self->canvas);
+
+    if (self->current_file) {
+        File_free(self->current_file);
+    }
 }
 
 Result get_window_size(size_t *rows, size_t *cols) {

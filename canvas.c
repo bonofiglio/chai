@@ -1,5 +1,6 @@
 #include "canvas.h"
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -12,13 +13,15 @@ size_t get_pixel_index(const size_t total_columns, const size_t row,
     return total_columns * row + col;
 }
 
-Canvas Canvas_new(const size_t width, const size_t height) {
+Canvas Canvas_new(const size_t height, const size_t width) {
     const size_t chars_len = width * height;
+    const size_t str_buf_len = chars_len * MAX_XCHAR_STR_SIZE;
     Canvas c = {.width = width,
                 .height = height,
                 .chars = malloc(chars_len * sizeof(XChar)),
                 .chars_len = chars_len,
-                .str_buf = malloc(chars_len * MAX_XCHAR_STR_SIZE)};
+                .str_buf = malloc(str_buf_len),
+                .str_buf_len = str_buf_len};
 
     return c;
 }
@@ -29,6 +32,10 @@ void Canvas_clear(Canvas* self) {
             self->chars[get_pixel_index(self->width, i, j)] =
                 XChar_from_char(' ');
         }
+    }
+
+    for (size_t i = 0; i < self->str_buf_len; i++) {
+        self->str_buf[i] = '\0';
     }
 }
 

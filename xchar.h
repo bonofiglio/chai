@@ -1,11 +1,9 @@
 #ifndef _XCHAR_H
-#define _XCHAR_H 
+#define _XCHAR_H
 
 #include "colors.h"
-#include <stdlib.h>
-#include <stdint.h>
 
-#define MAX_XCHAR_STR_SIZE sizeof(char) + COLOR_STR_SIZE + RESET_STR_SIZE
+#define MAX_XCHAR_STR_SIZE (sizeof(char) + COLOR_STR_SIZE + RESET_STR_SIZE)
 
 typedef struct XChar {
     char c;

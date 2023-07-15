@@ -1,8 +1,5 @@
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include "utils.h"
 
-#include "colors.h"
 #include "term.h"
 
 size_t size_t_width(const size_t num) {
@@ -41,7 +38,8 @@ void generate_empty_string(char* out, size_t len) {
     }
 }
 
-void get_line_number_str(const size_t row, const size_t max_row_len, char* out) {
+void get_line_number_str(const size_t row, const size_t max_row_len,
+                         char* out) {
     const size_t row_len = size_t_width(row);
     const size_t left_pad_len = MAX(max_row_len - row_len, 0);
 

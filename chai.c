@@ -1,28 +1,21 @@
-#include <limits.h>
 #include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
 #include <unistd.h>
 
-#include "canvas.h"
-#include "colors.h"
-#include "screen.h"
+#include "cursor.h"
 #include "term.h"
 #include "utils.h"
 #include "xchar.h"
 
-TermState g_term_state;
+void draw_text_file(TermState* state, const size_t h_pos,
+                    const size_t max_height) {
+    if (!state->current_file) return;
 
-void draw_text_file(const size_t offset, Canvas* canvas) {
-    if (!g_term_state.current_file) return;
+    const size_t columns = state->canvas.width - h_pos;
 
-    const size_t columns = canvas->width - offset;
-
-    for (size_t fr = 0, cr = 0; fr < canvas->height; fr++) {
-        const TextRow* current_row = &g_term_state.current_file->rows[fr];
+    for (size_t fr = state->scroll_pos, cr = 0;
+         fr < max_height + state->scroll_pos; fr++) {
+        const TextRow* current_row = &state->current_file->rows[fr];
 
         if (!current_row->size) {
             cr++;
@@ -31,8 +24,9 @@ void draw_text_file(const size_t offset, Canvas* canvas) {
 
         const size_t lines_to_write = CEIL(current_row->size, columns);
 
-        for (size_t i = 0; i < lines_to_write && cr < canvas->height;
-             i++, cr++) {
+        if (lines_to_write + cr > max_height) break;
+
+        for (size_t i = 0; i < lines_to_write; i++, cr++) {
             size_t r_offset = columns * i;
 
             size_t size = MIN(current_row->size - r_offset, columns);
@@ -40,87 +34,93 @@ void draw_text_file(const size_t offset, Canvas* canvas) {
             for (size_t j = 0; j < size; j++) {
                 char c = current_row->chars[r_offset + j];
 
-                Canvas_set_px(
-                    canvas, offset + j, cr,
-                    XChar_from_char(c));
+                Canvas_set_px(&state->canvas, h_pos + j, cr,
+                              XChar_from_char(c));
             }
         }
     }
 }
 
-size_t draw_line_num_rows(Canvas* canvas, const size_t rows) {
-    const size_t max_row_width = size_t_width(rows);
+size_t draw_line_num_rows(TermState* state, const size_t rows) {
+    const size_t max_row_width = size_t_width(state->current_file->num_rows);
+    const size_t line_num_width = max_row_width + 2;
     char line_num[max_row_width + 9];
 
-    for (size_t i = 0; i < rows; i++) {
-        get_line_number_str(i, max_row_width, line_num);
-        size_t line_num_width = strlen(line_num);
+    size_t prev_line_num = 0;
+    size_t line_num_at = 0;
 
-        for (size_t j = 0; j < line_num_width; j++) {
-            Canvas_set_px(canvas, j, i, XChar_with_color(line_num[j], BLU));
-        }
+    size_t lines_acc = 0;
+    for (size_t i = 0; i < state->scroll_pos; i++) {
+        lines_acc += TermState_get_text_row_height(state, i, line_num_width);
     }
 
-    return max_row_width + 1;
+    for (size_t i = 0; i < rows; i++) {
+        const size_t row_height = TermState_get_text_row_height(
+            state, i + state->scroll_pos, line_num_width);
+
+        if (row_height + i > rows) break;
+
+        line_num_at =
+            TermState_get_text_row_at(state, i + lines_acc, line_num_width);
+
+        if (line_num_at == prev_line_num) {
+            prev_line_num = line_num_at;
+
+            continue;
+        }
+
+        get_line_number_str(line_num_at, max_row_width, line_num);
+
+        for (size_t j = 0; j < line_num_width; j++) {
+            const XChar xc = XChar_with_color(line_num[j], BLU);
+            Canvas_set_px(&state->canvas, j, i, xc);
+        }
+
+        prev_line_num = line_num_at;
+    }
+
+    return max_row_width + 2;
 }
 
-void process_key(const char k, const size_t rows, const size_t cols,
-                 Cursor* cursor) {
+void process_key(TermState* state, const char k, const size_t max_height) {
+    ActiveCollisions ac = Cursor_touching_border(&state->cursor);
+
     switch (k) {
-        case TO_CTRL('q'):
+        case TO_CTRL('c'):
             exit(0);
             break;
         case 'h': {
-            size_t* col = &cursor->col;
-            size_t* row = &cursor->row;
-
-            if (*col > cursor->min_col) {
-                (*col)--;
-            } else if (*row > cursor->min_row) {
-                (*row)--;
-                *col = cols - 1;
+            Cursor_move(&state->cursor, Left);
+            if (ac.left && ac.up) {
+                TermState_scoll(state, Up, max_height);
             }
             break;
         }
         case 'l': {
-            size_t* col = &cursor->col;
-            size_t* row = &cursor->row;
-
-            if (*col < cols - 1) {
-                (*col)++;
-            } else if (*row < rows - 1) {
-                (*row)++;
-                *col = cursor->min_col;
+            Cursor_move(&state->cursor, Right);
+            if (ac.right && ac.down) {
+                TermState_scoll(state, Down, max_height);
             }
             break;
         }
         case 'j': {
-            if (cursor->row >= rows - 1) break;
-
-            cursor->row++;
+            Cursor_move(&state->cursor, Down);
+            if (ac.down) {
+                TermState_scoll(state, Down, max_height);
+            }
             break;
         }
         case 'k': {
-            if (cursor->row <= 0) break;
-
-            cursor->row--;
+            Cursor_move(&state->cursor, Up);
+            if (ac.up) {
+                TermState_scoll(state, Up, max_height);
+            }
             break;
         }
     }
 }
 
-void main_loop() {
-    size_t rows = 0;
-    size_t cols = 0;
-
-    const Result result = get_window_size(&rows, &cols);
-    if (result == Err) {
-        panic("get_window_size");
-    }
-
-    Canvas canvas = Canvas_new(cols, rows);
-    Cursor cursor = Cursor_new(0, 0);
-
+void main_loop(TermState* state) {
     // pre-allocate 128kb of vram
     ScreenBuffer scr_buf = ScreenBuffer_new(128000);
 
@@ -129,19 +129,18 @@ void main_loop() {
         ScreenBuffer_write(&scr_buf, ESC "[2J", 4);
         ScreenBuffer_write(&scr_buf, ESC "[H", 3);
 
-        Canvas_clear(&canvas);
+        Canvas_clear(&state->canvas);
+        const size_t line_num_width =
+            draw_line_num_rows(state, state->canvas.height - 1);
 
-        const size_t line_num_width = draw_line_num_rows(&canvas, rows);
-        cursor.min_col = line_num_width + 1;
+        Cursor_set_min_col(&state->cursor, line_num_width);
+        Cursor_set_max_row(&state->cursor, state->canvas.height - 1);
+        draw_text_file(state, line_num_width, state->canvas.height - 1);
 
-        if (cursor.col < cursor.min_col) cursor.col = cursor.min_col;
-
-        draw_text_file(line_num_width + 1, &canvas);
-
-        CharSizeTuple c_str = Canvas_to_str(&canvas);
+        CharSizeTuple c_str = Canvas_to_str(&state->canvas);
         ScreenBuffer_write(&scr_buf, c_str.chars, c_str.size);
 
-        const char* cursor_str = Cursor_to_str(&cursor);
+        const char* cursor_str = Cursor_to_str(&state->cursor);
         ScreenBuffer_write(&scr_buf, cursor_str, strlen(cursor_str));
 
         write(STDIN_FILENO, scr_buf.b, scr_buf.current_index);
@@ -151,32 +150,39 @@ void main_loop() {
         while (!read(STDIN_FILENO, &c, 1))
             ;
 
-        process_key(c, rows, cols, &cursor);
+        process_key(state, c, state->canvas.height - 1);
     };
 
     ScreenBuffer_free(&scr_buf);
-    Canvas_free(&canvas);
 }
 
-int main(const int argc, char *argv[]) {
+int main(const int argc, char* argv[]) {
+    setup_term();
+
+    size_t rows = 0;
+    size_t cols = 0;
+
+    if (get_window_size(&rows, &cols) == Err) {
+        panic("get_window_size");
+    }
+
+    TermState state =
+        TermState_new(Canvas_new(rows, cols), Cursor_new(0, 0, rows, cols));
+
     File current_file;
 
     if (argc == 2) {
-        printf("argv: %s", argv[1]);
+        current_file.path = argv[1];
 
         Result res = File_open(&current_file);
         if (res == Err) panic("File_open");
 
-        g_term_state.current_file = &current_file;
+        state.current_file = &current_file;
     }
 
-    setup_term();
+    main_loop(&state);
 
-    main_loop();
-
-    if (argc == 2) {
-        File_free(&current_file);
-    }
+    TermState_free(&state);
 
     return 0;
 }

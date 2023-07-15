@@ -1,12 +1,11 @@
 #ifndef _UTILS_H
 #define _UTILS_H
 
-#include <stdlib.h>
 #include <stdio.h>
 
 #define ESC "\x1b"
 #define TO_CTRL(key) ((key)&0x1f)
-#define CEIL(A, B) (A + (B - 1)) / B
+#define CEIL(A, B) (((A) + (B - 1)) / (B))
 #define MIN(A, B) (A < B ? A : B)
 #define MAX(A, B) (A > B ? A : B)
 
@@ -42,7 +41,17 @@
         pair;                             \
     })
 
+typedef enum Directions { Up, Down, Left, Right } Directions;
+
+typedef struct ActiveCollisions {
+    int up;
+    int down;
+    int left;
+    int right;
+} ActiveCollisions;
+
 typedef enum Result { Ok = 0, Err = -1 } Result;
+
 typedef struct SizeTPair {
     size_t first;
     size_t second;
