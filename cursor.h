@@ -4,8 +4,10 @@
 #include "utils.h"
 
 typedef struct Cursor {
-    size_t row;
-    size_t col;
+    size_t v_row;
+    size_t v_col;
+    size_t p_row;
+    size_t p_col;
     size_t min_row;
     size_t min_col;
     size_t max_row;

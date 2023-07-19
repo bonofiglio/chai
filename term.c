@@ -5,19 +5,33 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include "cursor.h"
+#include "fs.h"
+#include "utils.h"
+
 struct termios default_attrs;
 
 TermState TermState_new(Canvas canvas, Cursor cursor) {
     TermState ts = {.canvas = canvas,
                     .cursor = cursor,
                     .scroll_pos = 0,
-                    .current_file = NULL};
+                    .current_file = NULL,
+                    .mode = Normal,
+                    .row_num_cache = malloc(0)};
 
     return ts;
 }
 
-void TermState_scoll(TermState *self, enum Directions dir,
-                     const size_t max_height) {
+size_t TermState_get_scrolled_lines(TermState *self) {
+    size_t scrolled_lines = 0;
+    for (size_t i = 0; i < self->scroll_pos; i++) {
+        scrolled_lines += TermState_get_text_row_height(self, i);
+    }
+
+    return scrolled_lines;
+}
+
+void TermState_scroll(TermState *self, enum Directions dir) {
     switch (dir) {
         case Up:
             if (self->scroll_pos > 0) {
@@ -25,7 +39,11 @@ void TermState_scoll(TermState *self, enum Directions dir,
             }
             break;
         case Down:
-            if (max_height + self->scroll_pos < self->current_file->num_rows) {
+
+            if (TermState_get_text_row_at(
+                    self,
+                    TermState_get_scrolled_lines(self) + self->cursor.v_row) <
+                self->current_file->num_rows - 1) {
                 self->scroll_pos++;
             }
             break;
@@ -34,8 +52,21 @@ void TermState_scoll(TermState *self, enum Directions dir,
     }
 }
 
-size_t TermState_get_text_row_height(TermState *self, const size_t idx,
-                                     const size_t padding) {
+void TermState_gen_row_num_cache(TermState *self) {
+    self->row_num_cache =
+        realloc(self->row_num_cache, self->current_file->num_rows);
+
+    for (size_t i = 0, ri = 0; ri < self->current_file->num_rows; ri++) {
+        self->row_num_cache[ri] = i;
+
+        const size_t row_height = TermState_get_text_row_height(self, ri);
+
+        i += row_height;
+    }
+}
+
+size_t TermState_get_text_row_height(TermState *self, const size_t idx) {
+    const size_t padding = self->cursor.min_col;
     const TextRow *current_row = &self->current_file->rows[idx];
 
     if (current_row->size == 0) return 1;
@@ -46,20 +77,12 @@ size_t TermState_get_text_row_height(TermState *self, const size_t idx,
     return row_lines;
 }
 
-size_t TermState_get_text_row_at(TermState *self, const size_t y,
-                                 const size_t padding) {
-    size_t ri = 0;
+size_t TermState_get_text_row_at(TermState *self, const size_t y) {
+    size_t i = 0;
 
-    for (size_t i = 0; i <= y && ri < self->current_file->num_rows; ri++) {
-        const TextRow *current_row = &self->current_file->rows[ri];
+    while (i < self->current_file->num_rows && self->row_num_cache[i] <= y) i++;
 
-        const size_t row_height =
-            TermState_get_text_row_height(self, ri, padding);
-
-        i += row_height;
-    }
-
-    return ri;
+    return i - 1;
 }
 
 void TermState_free(TermState *self) {
@@ -193,8 +216,47 @@ Result get_cursor_position(Cursor *cursor) {
     col[i_col] = '\0';
     row[i_row] = '\0';
 
-    cursor->row = atoi(row);
-    cursor->col = atoi(col);
+    cursor->v_row = atoi(row);
+    cursor->v_col = atoi(col);
 
     return 0;
+}
+
+size_t TermState_get_current_text_line_col(TermState *self) {
+    size_t i = 0;
+
+    const size_t real_col =
+        self->cursor.v_row + TermState_get_scrolled_lines(self);
+
+    while (i < self->current_file->num_rows &&
+           self->row_num_cache[i] <= real_col)
+        i++;
+
+    const size_t line_row_start = self->row_num_cache[i - 1];
+
+    return (real_col - line_row_start) *
+               (self->canvas.width - self->cursor.min_col) +
+           self->cursor.v_col - self->cursor.min_col;
+}
+
+void TermState_insert_char(TermState *self, const char k) {
+    const size_t row_idx = TermState_get_text_row_at(
+        self, TermState_get_scrolled_lines(self) + self->cursor.v_row);
+
+    const size_t text_row_col = TermState_get_current_text_line_col(self);
+
+    TextRow *current_row = &self->current_file->rows[row_idx];
+
+    current_row->chars = realloc(current_row->chars, current_row->size + 1);
+
+    for (size_t i = 0; i <= current_row->size - text_row_col; i++) {
+        current_row->chars[current_row->size - i] =
+            current_row->chars[current_row->size - i - 1];
+    }
+
+    current_row->chars[text_row_col] = k;
+
+    current_row->size++;
+
+    Cursor_move(&self->cursor, Right);
 }

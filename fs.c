@@ -1,5 +1,6 @@
 #include "fs.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,3 +54,14 @@ void File_free(File* self) {
     free(self->path);
 }
 
+size_t File_get_idx_at_pos(File* self, const size_t col, const size_t row) {
+    size_t acc = 0;
+
+    for (size_t i = 0; i < row; i++) {
+        acc += self->rows[i].size;
+    }
+
+    acc += col;
+
+    return acc;
+}
